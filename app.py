@@ -14,6 +14,53 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+# Style CSS Amélioré
+st.markdown("""
+    <style>
+        /* Style général */
+        .block-container {padding-top: 1rem;}
+        h1 {color: #2c3e50;}
+        h2 {color: #34495e;}
+        h3 {color: #16a085;} /* Un joli vert pour les sous-titres */
+        
+        /* Style des "Cartes" de chiffres (Metrics) */
+        [data-testid="stMetric"] {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.05); /* Petite ombre douce */
+            text-align: center;
+        }
+        
+        /* Style des Onglets */
+        .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+        .stTabs [data-baseweb="tab"] {
+            height: 45px;
+            background-color: white;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            font-weight: 600;
+        }
+        .stTabs [aria-selected="true"] {
+            background-color: #e8f5e9; /* Vert très clair quand sélectionné */
+            color: #1e8449;
+            border: 1px solid #1e8449;
+        }
+
+        /* Footer et Impression (inchangé) */
+        .footer {
+            position: fixed; bottom: 0; left: 0; width: 20%;
+            background-color: #f0f2f6; color: #555;
+            text-align: center; padding: 10px; font-size: 11px;
+            border-top: 1px solid #ddd; z-index: 999;
+        }
+        @media print {
+            [data-testid="stSidebar"], .stButton, header {display: none;}
+            .block-container {padding-top: 0 !important;}
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 # --- SÉCURITÉ : MOT DE PASSE ---
 def check_password():
@@ -148,37 +195,40 @@ with st.sidebar:
         st.image("logo.png", use_container_width=True)
     except:
         st.header("🌍 MSCAL ERP")
-    # --- ZONE DE SAUVEGARDE/CHARGEMENT (NOUVEAU V2) ---
-    st.sidebar.markdown("### 💾 Mémoire Session")
-    col_save, col_load = st.sidebar.columns(2)
+    # --- ZONE DE SAUVEGARDE/CHARGEMENT (Optimisée) ---
+    st.sidebar.divider() # Une ligne de séparation propre
     
-    # Bouton SAUVEGARDER
-    with col_save:
-        # On compacte tout (paramètres + données) dans un paquet
-        session_data = {
-            'params': st.session_state.params,
-            'db': st.session_state.db_entries
-        }
-        session_json = json.dumps(session_data)
-        st.download_button("Bkp ⬇️", session_json, f"mscal_backup_{datetime.date.today()}.json", "application/json", help="Sauvegarder mon travail sur mon ordi")
+    # On met tout dans un menu déroulant pour gagner de la place
+    with st.sidebar.expander("💾 Sauvegarde & Restauration", expanded=False):
+        st.caption("Pour ne jamais perdre vos données.")
+        col_save, col_load = st.columns(2)
+        
+        # Bouton SAUVEGARDER
+        with col_save:
+            session_data = {
+                'params': st.session_state.params,
+                'db': st.session_state.db_entries
+            }
+            session_json = json.dumps(session_data)
+            st.download_button("⬇️ Sauver", session_json, f"mscal_bkp_{datetime.date.today()}.json", "application/json", use_container_width=True)
 
-    # Bouton CHARGER
-    with col_load:
-        # Petit hack pour charger discrètement
-        uploaded_json = st.file_uploader("Ouvrir ⬆️", type=["json"], label_visibility="collapsed")
+        # Bouton CHARGER
+        with col_load:
+            # Astuce visuelle : on utilise un bouton vide qui sert juste de label
+            st.markdown("⬆️ **Ouvrir**") 
+        
+        # Le chargeur de fichier juste en dessous, plus discret
+        uploaded_json = st.file_uploader("Chargez votre fichier JSON ici", type=["json"], label_visibility="collapsed")
         if uploaded_json is not None:
             try:
                 data = json.load(uploaded_json)
-                # On remet les données en place
                 if 'params' in data: st.session_state.params = data['params']
                 if 'db' in data: st.session_state.db_entries = data['db']
-                st.success("Chargé !")
+                st.success("✅ Chargé !")
                 st.rerun()
             except:
-                st.error("Erreur fichier")
-    
-    st.sidebar.divider()
-    # ----------------------------------------------------
+                st.error("Fichier invalide")
+
     st.markdown("### 🧭 Menu de Navigation")
     
     nav = st.radio("Séquence de travail", [
