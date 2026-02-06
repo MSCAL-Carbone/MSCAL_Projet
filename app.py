@@ -71,20 +71,20 @@ def check_password():
     if st.session_state.password_correct:
         return True  # Déjà connecté
 
+    # --- AJOUT : PETIT ESPACE POUR ÉVITER QUE LE TITRE SOIT CACHÉ ---
+    st.markdown("<br><br>", unsafe_allow_html=True) 
+    
     st.markdown("### 🔒 Accès Sécurisé MSCAL ERP")
     pwd = st.text_input("Veuillez entrer le mot de passe administrateur :", type="password")
     
     if st.button("Se connecter"):
-        if pwd == "MSCAL2026":  # <--- Le MOT DE PASSE EST ICI 
+        if pwd == "MSCAL2026":  # <--- Le MOT DE PASSE EST ICI
             st.session_state.password_correct = True
             st.rerun()
         else:
             st.error("❌ Mot de passe incorrect")
             
     return False
-
-if not check_password():
-    st.stop()  # ARRÊTE TOUT SI PAS CONNECTÉ
 
 
 
