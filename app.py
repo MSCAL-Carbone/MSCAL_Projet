@@ -287,16 +287,20 @@ with st.sidebar:
             st.session_state.db_entries = []
             st.rerun()
 
-    # Signature ACS
-    st.sidebar.markdown("""
-        <div class="footer">
+    # --- PIED DE PAGE (SIGNATURE OPTIMISÉE) ---
+    st.sidebar.markdown("---") # Une ligne de séparation fine
+    st.sidebar.markdown(
+        """
+        <div style="text-align: center; font-size: 11px; color: #888; line-height: 1.5;">
             <b>© 2026 MSCAL CARBON ERP</b><br>
-            <i>Solution Ingénieur</i><br>
-            Developed by <b>Team ACS</b><br>
-            (Abdel | Clara | Steve)<br>
-            ENSAIA
+            <i>Solution Ingénieur ENSAIA</i><br>
+            <br>
+            Dev by <b>Team ACS</b><br>
+            <span style="font-size: 10px;">(Abdel | Clara | Steve)</span>
         </div>
-    """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True
+    )
 
 # ==============================================================================
 # PAGE 0 : GUIDE & DÉFINITIONS
