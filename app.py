@@ -3,7 +3,7 @@ import pandas as pd
 import datetime
 import altair as alt
 import io
-
+import json
 
 # ==============================================================================
 # 1. CONFIGURATION & STYLE
@@ -14,8 +14,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# ... (Après st.set_page_config)
 
 # --- SÉCURITÉ : MOT DE PASSE ---
 def check_password():
@@ -30,7 +28,7 @@ def check_password():
     pwd = st.text_input("Veuillez entrer le mot de passe administrateur :", type="password")
     
     if st.button("Se connecter"):
-        if pwd == "MSCAL2026":  # <--- TON MOT DE PASSE EST ICI (Change-le !)
+        if pwd == "MSCAL2026":  # <--- Le MOT DE PASSE EST ICI 
             st.session_state.password_correct = True
             st.rerun()
         else:
@@ -150,7 +148,37 @@ with st.sidebar:
         st.image("logo.png", use_container_width=True)
     except:
         st.header("🌍 MSCAL ERP")
+    # --- ZONE DE SAUVEGARDE/CHARGEMENT (NOUVEAU V2) ---
+    st.sidebar.markdown("### 💾 Mémoire Session")
+    col_save, col_load = st.sidebar.columns(2)
     
+    # Bouton SAUVEGARDER
+    with col_save:
+        # On compacte tout (paramètres + données) dans un paquet
+        session_data = {
+            'params': st.session_state.params,
+            'db': st.session_state.db_entries
+        }
+        session_json = json.dumps(session_data)
+        st.download_button("Bkp ⬇️", session_json, f"mscal_backup_{datetime.date.today()}.json", "application/json", help="Sauvegarder mon travail sur mon ordi")
+
+    # Bouton CHARGER
+    with col_load:
+        # Petit hack pour charger discrètement
+        uploaded_json = st.file_uploader("Ouvrir ⬆️", type=["json"], label_visibility="collapsed")
+        if uploaded_json is not None:
+            try:
+                data = json.load(uploaded_json)
+                # On remet les données en place
+                if 'params' in data: st.session_state.params = data['params']
+                if 'db' in data: st.session_state.db_entries = data['db']
+                st.success("Chargé !")
+                st.rerun()
+            except:
+                st.error("Erreur fichier")
+    
+    st.sidebar.divider()
+    # ----------------------------------------------------
     st.markdown("### 🧭 Menu de Navigation")
     
     nav = st.radio("Séquence de travail", [
