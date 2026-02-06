@@ -62,30 +62,40 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- SÉCURITÉ : MOT DE PASSE ---
-def check_password():
-    """Retourne True si l'utilisateur a le bon mot de passe."""
-    if "password_correct" not in st.session_state:
-        st.session_state.password_correct = False
+# --- SÉCURITÉ : MOT DE PASSE et GESTION DES RÔLES ---
 
-    if st.session_state.password_correct:
+def check_password():
+    """Gère l'authentification Admin vs Visiteur."""
+    if "user_role" not in st.session_state:
+        st.session_state.user_role = None
+
+    if st.session_state.user_role:
         return True  # Déjà connecté
 
-    # --- AJOUT : PETIT ESPACE POUR ÉVITER QUE LE TITRE SOIT CACHÉ ---
-    st.markdown("<br><br>", unsafe_allow_html=True) 
+    # Espace pour le titre
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
     
     st.markdown("### 🔒 Accès Sécurisé MSCAL ERP")
-    pwd = st.text_input("Veuillez entrer le mot de passe administrateur :", type="password")
+    st.caption("Connectez-vous pour accéder à l'outil.")
+    
+    pwd = st.text_input("Mot de passe :", type="password")
     
     if st.button("Se connecter"):
-        if pwd == "MSCAL2026":  # <--- Le MOT DE PASSE EST ICI
-            st.session_state.password_correct = True
+        if pwd == "MSCAL2026":  # <--- MOT DE PASSE ADMIN
+            st.session_state.user_role = "admin"
+            st.success("Connexion Admin réussie !")
+            st.rerun()
+        elif pwd == "GUEST":    # <--- MOT DE PASSE VISITEUR
+            st.session_state.user_role = "guest"
+            st.info("Connexion Visiteur (Accès limité).")
             st.rerun()
         else:
             st.error("❌ Mot de passe incorrect")
             
     return False
 
+if not check_password():
+    st.stop()
 
 
 # Style CSS (Signature + Titres + Ajustements)
@@ -230,15 +240,28 @@ with st.sidebar:
                 st.error("Fichier invalide")
 
     st.markdown("### 🧭 Menu de Navigation")
-    
-    nav = st.radio("Séquence de travail", [
-        "0. 📘 GUIDE & DÉFINITIONS",
-        "1. ⚙️ DÉFINIR & PARAMÉTRER", 
-        "2. 📝 MESURER (Saisie Flux)", 
-        "3. 📊 ANALYSER (Cockpit & KPIs)",
-        "4. 🚀 AMÉLIORER (Simulateur)",
-        "5. 📄 CONTRÔLER (Rapport Final)"
-    ])
+    # --- DÉFINITION DU MENU SELON LE RÔLE ---
+    if st.session_state.user_role == "admin":
+        # L'Admin voit tout
+        menu_options = [
+            "0. 📘 GUIDE & DÉFINITIONS",
+            "1. ⚙️ DÉFINIR & PARAMÉTRER", 
+            "2. 📝 MESURER (Saisie Flux)", 
+            "3. 📊 ANALYSER (Cockpit & KPIs)",
+            "4. 🚀 AMÉLIORER (Simulateur)",
+            "5. 📄 CONTRÔLER (Rapport Final)"
+        ]
+    else:
+        # Le Visiteur/Étudiant voit une version simplifiée
+        menu_options = [
+            "0. 📘 GUIDE & DÉFINITIONS",
+            "2. 📝 MESURER (Saisie Flux)", 
+            "3. 📊 ANALYSER (Cockpit & KPIs)",
+            "4. 🚀 AMÉLIORER (Simulateur)"
+        ]
+        st.info(f"👤 Mode Visiteur")
+
+    nav = st.radio("Séquence de travail", menu_options)
     
     st.divider()
     
