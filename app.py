@@ -709,10 +709,10 @@ elif "2." in nav:
         st.info("Aucune donnée saisie. Commencez par l'inventaire ou les flux logistiques.")
 #étape 3
 # ==============================================================================
-# PAGE 3 : ANALYSER (TABLEAU DE BORD DÉCISIONNEL)
+# PAGE 3 : ANALYSER (TABLEAU DE BORD DÉCISIONNEL & SCOPES)
 # ==============================================================================
 elif "3." in nav:
-    import altair as alt # Nécessaire pour les graphes interactifs
+    import altair as alt 
     
     st.title("📊 Cockpit de Performance & Analyse")
     st.markdown("Analyse fine des impacts, identification des leviers et contrôle de la qualité de donnée.")
@@ -727,14 +727,32 @@ elif "3." in nav:
         df["Impact_kgCO2"] = pd.to_numeric(df["Impact_kgCO2"], errors='coerce').fillna(0)
         df["Marge"] = pd.to_numeric(df["Marge"], errors='coerce').fillna(0)
         
-        # --- MOTEUR DE CALCUL DES KPIs ---
+        # --- AJOUT INTELLIGENT : DÉTECTION DES SCOPES ---
+        # (Sert à rendre le KPI "Part Scope 3" plus précis et à créer le graphique Scope)
+        def get_scope(row):
+            detail = str(row.get("Détail", ""))
+            if "Scope 1" in detail: return "Scope 1"
+            if "Scope 2" in detail: return "Scope 2"
+            if "Scope 3" in detail: return "Scope 3"
+            
+            cat = str(row.get("Catégorie", ""))
+            item = str(row.get("Item", ""))
+            if "Bâtiment" in cat or "Énergie" in cat:
+                if "Gaz" in item or "Fioul" in item: return "Scope 1"
+                if "Élec" in item or "Chauffage" in item or "Radiateur" in item: return "Scope 2"
+            return "Scope 3"
+
+        df["Scope"] = df.apply(get_scope, axis=1)
+        # ------------------------------------------------
+
+        # --- MOTEUR DE CALCUL DES KPIs (Tes calculs originaux) ---
         # A. Totaux
         total_co2_t = df["Impact_kgCO2"].sum() / 1000.0
         total_marge_t = df["Marge"].sum() / 1000.0
         
         # B. Population & Ratios
         pop_totale = st.session_state.params['pop_etu'] + st.session_state.params['pop_alt'] + st.session_state.params['pop_prof']
-        if pop_totale == 0: pop_totale = 1 # Anti-division par zéro
+        if pop_totale == 0: pop_totale = 1
         
         ratio_pers = total_co2_t / pop_totale
         budget_cible = float(st.session_state.params['budget_co2'])
@@ -743,81 +761,63 @@ elif "3." in nav:
         cout_carbone = total_co2_t * st.session_state.params['shadow_price']
         
         # D. Qualité de Donnée (DQI)
-        # On calcule une note sur 10 basée sur l'incertitude moyenne pondérée par l'impact
         if total_co2_t > 0:
-            dqi_score = 10 - (df["Marge"].sum() / df["Impact_kgCO2"].sum() * 20) # Formule arbitraire expert
+            dqi_score = 10 - (df["Marge"].sum() / df["Impact_kgCO2"].sum() * 20) 
         else:
             dqi_score = 0
-        dqi_score = max(0, min(10, dqi_score)) # Borner entre 0 et 10
+        dqi_score = max(0, min(10, dqi_score))
 
-        # --- ZONE 1 : CONTROL TOWER (8 KPIs) ---
+        # --- ZONE 1 : CONTROL TOWER (Tes 8 KPIs conservés) ---
         st.markdown("### 🎛️ Control Tower")
         
         # LIGNE 1 : PERFORMANCE ABSOLUE
         k1, k2, k3, k4 = st.columns(4)
-        k1.metric(
-            "Empreinte Totale (Net)", 
-            f"{total_co2_t:.2f} T CO2e", 
-            delta=f"± {total_marge_t:.2f} T (Incertitude)",
-            delta_color="off"
-        )
+        k1.metric("Empreinte Totale (Net)", f"{total_co2_t:.2f} T CO2e", f"± {total_marge_t:.2f} T (Incertitude)", delta_color="off")
         
-        # Jauge comparative (Target vs Réel)
         delta_obj = budget_cible - ratio_pers
-        k2.metric(
-            "Ratio / Personne", 
-            f"{ratio_pers:.2f} T/pers", 
-            f"{delta_obj:+.2f} T vs Objectif {budget_cible}T",
-            delta_color="normal" # Vert si on est en dessous, Rouge si au dessus
-        )
+        k2.metric("Ratio / Personne", f"{ratio_pers:.2f} T/pers", f"{delta_obj:+.2f} T vs Objectif {budget_cible}T", delta_color="normal")
         
         k3.metric("Coût Fantôme (Risque)", f"{cout_carbone:,.0f} €", f"Prix: {st.session_state.params['shadow_price']}€/T")
         
-        # Intensité temporelle
         intensite_jour = (total_co2_t * 1000) / st.session_state.params['jours_ouverture']
         k4.metric("Intensité Quotidienne", f"{intensite_jour:.0f} kgCO2e/j", "Jours ouvrés")
 
         # LIGNE 2 : PERFORMANCE SUPPLY CHAIN
         k5, k6, k7, k8 = st.columns(4)
         
-        # Part du Scope 3 (Calcul approximatif basé sur les catégories)
-        scope3_items = df[df['Catégorie'].isin(['Mobilité', 'Achats', 'Numérique', 'Logistique Humaine'])]['Impact_kgCO2'].sum() / 1000
+        # AMÉLIORATION ICI : On utilise la nouvelle colonne Scope pour être plus précis
+        scope3_items = df[df['Scope'] == 'Scope 3']['Impact_kgCO2'].sum() / 1000
         part_scope3 = (scope3_items / total_co2_t) * 100 if total_co2_t > 0 else 0
         
         k5.metric("Part du Scope 3", f"{part_scope3:.1f} %", "Dépendance Extérieure")
         
-        # Data Quality Index
         dqi_color = "normal" if dqi_score > 7 else "inverse"
         k6.metric("Indice Qualité Donnée (DQI)", f"{dqi_score:.1f} / 10", "Fiabilité", delta_color=dqi_color)
         
         k7.metric("Nombre de Flux", len(df), "Lignes saisies")
         
-        # Ratio Surfacique (si bâtiment saisi)
         bat_impact = df[df['Catégorie'] == 'Bâtiment']['Impact_kgCO2'].sum()
         k8.metric("Impact Bâtiment Seul", f"{bat_impact/1000:.1f} T", "Scope 1 & 2")
 
         st.divider()
 
-        # --- ZONE 2 : VISUALISATION AVANCÉE (INTERACTIVE) ---
+        # --- ZONE 2 : VISUALISATION AVANCÉE (Ajout de l'onglet Scopes) ---
         st.markdown("### 🔭 Analyse Visuelle & Stratégique")
         
-        t_rep, t_pareto, t_matrix, t_pop = st.tabs(["🍩 Répartition", "📉 Pareto (80/20)", "🎯 Matrice Priorité", "👥 Par Population"])
+        # AJOUT de l'onglet "🏗️ Scopes (ISO)" dans la liste
+        t_rep, t_scope, t_pareto, t_matrix, t_pop = st.tabs(["🍩 Répartition", "🏗️ Scopes (ISO)", "📉 Pareto (80/20)", "🎯 Matrice Priorité", "👥 Par Population"])
         
-        # GRAPHE 1 : DONUT INTERACTIF
+        # GRAPHE 1 : DONUT (Amélioré par rapport au Pie Chart classique)
         with t_rep:
             c1, c2 = st.columns([2, 1])
             with c1:
-                # Agrégation
                 df_cat = df.groupby("Catégorie")["Impact_kgCO2"].sum().reset_index()
-                
-                # Chart Altair
                 chart_donut = alt.Chart(df_cat).mark_arc(innerRadius=60).encode(
                     theta=alt.Theta(field="Impact_kgCO2", type="quantitative"),
                     color=alt.Color(field="Catégorie", type="nominal", scale=alt.Scale(scheme='category10')),
                     order=alt.Order("Impact_kgCO2", sort="descending"),
                     tooltip=["Catégorie", alt.Tooltip("Impact_kgCO2", format=".1f")]
                 ).properties(title="Répartition par Grand Poste")
-                
                 st.altair_chart(chart_donut, use_container_width=True)
             
             with c2:
@@ -826,49 +826,43 @@ elif "3." in nav:
                 for cat, val in top3.items():
                     st.write(f"• **{cat}** : {val/1000:.1f} T ({val/df['Impact_kgCO2'].sum()*100:.0f}%)")
 
-        # GRAPHE 2 : PARETO (L'outil de l'ingénieur)
+        # GRAPHE 2 : SCOPES (NOUVEAU GRAPHE)
+        with t_scope:
+            st.caption("Répartition selon la norme ISO 14064 / GHG Protocol.")
+            bar_scope = alt.Chart(df).mark_bar(cornerRadius=5).encode(
+                x=alt.X('Scope', sort=['Scope 1', 'Scope 2', 'Scope 3'], axis=alt.Axis(title=None)),
+                y=alt.Y('sum(Impact_kgCO2)', title='kg CO2e'),
+                color=alt.Color('Scope', scale=alt.Scale(domain=['Scope 1', 'Scope 2', 'Scope 3'], range=['#e74c3c', '#f1c40f', '#3498db'])),
+                tooltip=['Scope', 'sum(Impact_kgCO2)']
+            ).properties(height=300)
+            st.altair_chart(bar_scope, use_container_width=True)
+
+        # GRAPHE 3 : PARETO (Ton code original)
         with t_pareto:
             st.caption("Le diagramme de Pareto permet d'identifier les 'Vital Few' : les 20% d'actions qui génèrent 80% de l'impact.")
-            
-            # Préparation Pareto
             df_pareto = df.groupby("Item")["Impact_kgCO2"].sum().reset_index().sort_values("Impact_kgCO2", ascending=False)
             df_pareto["Cumul"] = df_pareto["Impact_kgCO2"].cumsum()
             df_pareto["Cumul_Pct"] = df_pareto["Cumul"] / df_pareto["Impact_kgCO2"].sum()
             
-            # Base Chart
             base = alt.Chart(df_pareto.head(10)).encode(x=alt.X('Item', sort=None))
-
-            # Barres
-            bars = base.mark_bar().encode(
-                y='Impact_kgCO2',
-                tooltip=['Item', 'Impact_kgCO2']
-            )
-
-            # Ligne Cumul
-            line = base.mark_line(color='red').encode(
-                y='Cumul_Pct',
-                tooltip=[alt.Tooltip('Cumul_Pct', format='.0%')]
-            )
-
+            bars = base.mark_bar().encode(y='Impact_kgCO2', tooltip=['Item', 'Impact_kgCO2'])
+            line = base.mark_line(color='red').encode(y='Cumul_Pct', tooltip=[alt.Tooltip('Cumul_Pct', format='.0%')])
             st.altair_chart((bars + line).resolve_scale(y='independent'), use_container_width=True)
 
-        # GRAPHE 3 : MATRICE DE PRIORITÉ (SCATTER PLOT)
+        # GRAPHE 4 : MATRICE (Ton code original)
         with t_matrix:
             st.markdown("#### Matrice Impact / Incertitude")
             st.caption("Ciblez la zone 'Haut-Droite' : Gros Impact & Grosse Incertitude -> Il faut affiner la donnée ici !")
-            
             scatter = alt.Chart(df).mark_circle(size=100).encode(
                 x=alt.X('Impact_kgCO2', title='Impact Carbone (kg)'),
                 y=alt.Y('Incertitude', title='Incertitude (%)'),
                 color='Catégorie',
                 tooltip=['Item', 'Impact_kgCO2', 'Incertitude', 'Détail']
             ).interactive()
-            
             st.altair_chart(scatter, use_container_width=True)
 
-        # GRAPHE 4 : ANALYSE POPULATION
+        # GRAPHE 5 : POPULATION (Ton code original)
         with t_pop:
-            # On filtre uniquement ce qui concerne les humains
             df_hum = df[df['Catégorie'].str.contains("Mobilité|Logistique", na=False)]
             if not df_hum.empty:
                 chart_pop = alt.Chart(df_hum).mark_bar().encode(
@@ -881,7 +875,7 @@ elif "3." in nav:
             else:
                 st.info("Pas assez de données de mobilité pour ce graphique.")
 
-        # --- ZONE 3 : EXPORT & RAPPORT ---
+        # --- ZONE 3 : EXPORT & RAPPORT (Ta section originale avec xlsxwriter) ---
         st.divider()
         st.subheader("📄 Export & Reporting")
         
@@ -890,7 +884,6 @@ elif "3." in nav:
             st.info("💡 **Pour générer un PDF :** Utilisez la fonction 'Imprimer' de votre navigateur (Ctrl+P) et choisissez 'Enregistrer au format PDF'.")
             
         with col_ex2:
-            # Export Excel pour l'Analyse
             buffer_analyse = io.BytesIO()
             with pd.ExcelWriter(buffer_analyse, engine='xlsxwriter') as writer:
                 df.to_excel(writer, index=False, sheet_name='Données Calculées')
@@ -902,157 +895,226 @@ elif "3." in nav:
                 mime="application/vnd.ms-excel"
             )
             
-        # Tableau Récapitulatif Final pour le Rapport
         with st.expander("Voir le Tableau de Synthèse Complet", expanded=False):
             st.dataframe(df, use_container_width=True)
 # ==============================================================================
-# PAGE 4 : AMÉLIORER (SIMULATEUR AVANCÉ)
+# PAGE 4 : SIMULER (VERSION ROBUSTE V4)
 # ==============================================================================
 elif "4." in nav:
-    import altair as alt # Import local pour garantir le fonctionnement
+    import altair as alt 
     
     st.title("🚀 Simulateur de Transition & Plan d'Action")
-    st.markdown("Pilotez la décarbonation via 10 leviers stratégiques. Visualisez l'atterrissage 2030.")
+    st.markdown("Pilotez la décarbonation : Démographie, Distanciel et Leviers techniques.")
 
     if not st.session_state.db_entries:
         st.warning("⚠️ Aucune donnée de référence. Veuillez saisir des flux à l'étape 2.")
     else:
-        # --- 1. CALCUL DE LA BASELINE (SITUATION INITIALE) ---
+        # --- 1. CALCUL DE LA BASELINE (SITUATION 2026) ---
         df_base = pd.DataFrame(st.session_state.db_entries)
         df_base["Impact_kgCO2"] = pd.to_numeric(df_base["Impact_kgCO2"], errors='coerce').fillna(0)
         
-        # Segmentation fine pour les calculs
-        ref_mob = df_base[df_base['Catégorie'].str.contains("Mobilité|Logistique", na=False)]['Impact_kgCO2'].sum()
-        ref_ener_elec = df_base[df_base['Item'].str.contains("Élec", case=False, na=False)]['Impact_kgCO2'].sum()
-        ref_ener_heat = df_base[df_base['Item'].str.contains("Gaz|Chauffage", case=False, na=False)]['Impact_kgCO2'].sum()
-        ref_it = df_base[df_base['Catégorie'].str.contains("Numérique", na=False)]['Impact_kgCO2'].sum()
-        ref_food = df_base[df_base['Item'].str.contains("Repas|Café", case=False, na=False)]['Impact_kgCO2'].sum()
-        ref_waste = df_base[df_base['Catégorie'].str.contains("Déchets|Achats", na=False)]['Impact_kgCO2'].sum()
+        # --- CORRECTION DES LIAISONS (Recherche élargie) ---
+        # On s'assure de tout attraper, même si c'est écrit "Radiateur" ou "Fuel"
+        
+        # 1. MOBILITÉ
+        # On cherche dans Catégorie OU Item
+        mask_mob = df_base.apply(lambda x: any(k in str(x['Catégorie']).lower() for k in ['mobilit', 'logisti', 'transport', 'déplacement']) or any(k in str(x['Item']).lower() for k in ['voiture', 'train', 'avion', 'tgv', 'bus']), axis=1)
+        ref_mob = df_base[mask_mob]['Impact_kgCO2'].sum()
+
+        # 2. BÂTIMENT & ÉNERGIE
+        # On sépare l'Élec du Chauffage pour appliquer les bons leviers
+        df_bat = df_base[df_base.apply(lambda x: any(k in str(x['Catégorie']).lower() for k in ['bâtiment', 'batiment', 'énergie', 'energie']), axis=1)]
+        
+        ref_ener_elec = 0.0
+        ref_ener_heat = 0.0
+        
+        for i, row in df_bat.iterrows():
+            txt = (str(row['Item']) + " " + str(row['Détail'])).lower()
+            # Si ça parle de Watt, KWh, Elec, Ampoule -> C'est de l'élec
+            if any(k in txt for k in ['elec', 'élec', 'watt', 'kwh', 'led', 'ampoule', 'ordinateur', 'ecran']):
+                ref_ener_elec += row['Impact_kgCO2']
+            else:
+                # Tout le reste du bâtiment est considéré comme du chauffage (Gaz, Fioul, Radiateur, Eau chaude...)
+                ref_ener_heat += row['Impact_kgCO2']
+
+        # 3. IT & RESSOURCES
+        mask_it = df_base['Catégorie'].str.contains("Numérique|IT|Informatique|Digital", case=False, na=False)
+        ref_it = df_base[mask_it]['Impact_kgCO2'].sum()
+        
+        mask_food = df_base.apply(lambda x: any(k in str(x['Item']).lower() for k in ['repas', 'café', 'boisson', 'snack', 'restau']), axis=1)
+        ref_food = df_base[mask_food]['Impact_kgCO2'].sum()
+        
+        mask_waste = df_base['Catégorie'].str.contains("Déchet|Achat|Fourniture", case=False, na=False)
+        ref_waste = df_base[mask_waste]['Impact_kgCO2'].sum()
         
         total_ref = df_base["Impact_kgCO2"].sum()
-        
-        # --- 2. TABLEAU DE BORD DES LEVIERS (10 ACTIONS) ---
+
+        # --- 2. TABLEAU DE BORD DES LEVIERS ---
         with st.container(border=True):
-            st.subheader("🎛️ Cockpit des Leviers d'Action")
+            st.subheader("🎛️ Cockpit de Pilotage")
             
-            t1, t2, t3 = st.tabs(["🚗 Mobilité", "⚡ Bâtiment & Énergie", "💻 IT & Ressources"])
+            # Organisation en onglets
+            t_strat, t_mob, t_bat, t_res = st.tabs(["👥 Stratégie & Pop.", "🚗 Mobilité", "⚡ Bâtiment", "💻 IT & Achats"])
             
-            # LEVIERS MOBILITÉ
-            with t1:
+            # ONGLET 1 : STRATÉGIE
+            with t_strat:
                 c1, c2 = st.columns(2)
-                sim_mob_reduce = c1.slider("📉 Sobriété (Moins de km)", 0, 50, 10, format="-%d%%", help="Télétravail, cours à distance, optimisation tournées.")
-                sim_mob_train = c2.checkbox("🚆 Report Modal (Avion ➔ Train)", help="Bascule les trajets avion vers le train (-90% CO2).")
-                sim_mob_carpool = c1.slider("🚙 Taux Covoiturage", 1.0, 3.0, 1.0, step=0.1, help="Passer de 1 pers/voiture à 2 pers/voiture divise l'impact par 2.")
-                sim_mob_soft = c2.checkbox("🚲 Plan Vélo / Douce", help="Report de 10% des trajets courts voiture vers vélo.")
+                sim_pop_growth = c1.slider("📈 Évolution Effectifs", -20, 50, 0, format="%+d%%", help="Impact structurel de la croissance de l'école.")
+                sim_remote_days = c2.slider("💻 Jours en Distanciel / sem", 0, 5, 0, format="%d j", help="Agit massivement sur les trajets domicile-travail.")
+                st.caption(f"Note : Le distanciel réduit les trajets quotidiens de {sim_remote_days*20}% mécaniquement.")
 
-            # LEVIERS ÉNERGIE
-            with t2:
+            # ONGLET 2 : MOBILITÉ (J'ai remis ton slider de Sobriété !)
+            with t_mob:
                 c1, c2 = st.columns(2)
-                sim_elec_green = c1.checkbox("⚡ Contrat Électricité Verte", help="Fournisseur garanti origine renouvelable.")
-                sim_solar = c1.slider("☀️ Panneaux Solaires (Autoconsommation)", 0, 50, 0, format="%d%% besoin", help="Produire sa propre électricité.")
-                sim_heat = c2.slider("🔥 Isolation & Sobriété Chauffage", 0, 40, 5, format="-%d%%", help="Isolation, 19°C max (-7% par degré en moins).")
-                sim_led = c2.checkbox("💡 Relamping LED (100%)", help="Réduit la part éclairage de 50%.")
+                sim_mob_reduce = c1.slider("📉 Sobriété Km (Réduction Volontaire)", 0, 50, 0, format="-%d%%", help="Ex: Moins de voyages, optimisation des tournées.")
+                sim_mob_train = c2.checkbox("🚆 Report Modal (Interdiction Avion)", help="Bascule les trajets avion vers le train.")
+                sim_mob_carpool = c1.slider("🚙 Taux Covoiturage", 1.0, 4.0, 1.0, step=0.1, help="Nb pers. / voiture.")
+                sim_mob_soft = c2.checkbox("🚲 Plan Vélo (Trajets courts)", help="Report de 15% des trajets voiture vers vélo.")
 
-            # LEVIERS IT & RESSOURCES
-            with t3:
+            # ONGLET 3 : BÂTIMENT
+            with t_bat:
                 c1, c2 = st.columns(2)
-                sim_it_life = c1.slider("⏳ Allongement Vie IT (+ années)", 0, 4, 0, help="Garder les PC 6 ou 8 ans au lieu de 4.")
-                sim_it_refurb = c1.slider("♻️ Part Achat Reconditionné", 0, 100, 0, format="%d%%", help="Le reconditionné émet 80% moins de CO2 à l'achat.")
-                sim_food_vege = c2.slider("🥗 Menus Végétariens", 0, 100, 10, format="%d%% des repas", help="Impact divisé par 10 vs Bœuf.")
-                sim_waste = c2.slider("🗑️ Réduction Déchets", 0, 50, 0, format="-%d%%", help="Vrac, zéro plastique, recyclage.")
+                sim_elec_green = c1.checkbox("⚡ Contrat Électricité Verte", help="Passe le facteur d'émission élec proche de 0.")
+                sim_solar = c1.slider("☀️ Panneaux Solaires (Autoconsommation)", 0, 50, 0, format="%d%% besoin")
+                sim_heat = c2.slider("🔥 Isolation & Sobriété (19°C)", 0, 50, 0, format="-%d%%", help="Agit sur le Chauffage/Radiateurs.")
+                sim_led = c2.checkbox("💡 Relamping LED Total", help="-50% sur l'éclairage.")
 
-        # --- 3. MOTEUR DE CALCUL (SCÉNARIOS) ---
-        
-        # MOBILITÉ
-        # 1. On réduit le volume (Sobriété)
-        mob_step1 = ref_mob * (1 - sim_mob_reduce/100)
-        # 2. Report Modal (On cible une part arbitraire de 30% avion transformée en train)
-        gain_train = (mob_step1 * 0.30) * 0.90 if sim_mob_train else 0
-        mob_step2 = mob_step1 - gain_train
-        # 3. Covoit (On divise l'impact routier restant par le taux d'occupation)
-        mob_step3 = mob_step2 / sim_mob_carpool
-        # 4. Vélo (Gain 5% global)
-        gain_velo = mob_step3 * 0.05 if sim_mob_soft else 0
-        
-        final_mob = mob_step3 - gain_velo
-        gain_total_mob = ref_mob - final_mob
+            # ONGLET 4 : IT & RESSOURCES
+            with t_res:
+                c1, c2 = st.columns(2)
+                sim_it_life = c1.slider("⏳ Durée de vie IT (+ années)", 0, 5, 0, help="Garder les PC plus longtemps.")
+                sim_it_refurb = c1.slider("♻️ Part d'achat Reconditionné", 0, 100, 0, format="%d%%")
+                sim_food_vege = c2.slider("🥗 Menus Végétariens", 0, 100, 0, format="%d%% repas")
+                sim_waste = c2.slider("🗑️ Réduction Déchets", 0, 50, 0, format="-%d%%")
 
-        # ÉNERGIE
-        # 1. Chauffage
-        final_heat = ref_ener_heat * (1 - sim_heat/100)
-        # 2. Élec (LED réduit conso, Solaire réduit grid, Vert réduit facteur)
-        elec_step1 = ref_ener_elec * 0.90 if sim_led else ref_ener_elec # Gain LED
-        elec_step2 = elec_step1 * (1 - sim_solar/100) # Gain Solaire (moins de kWh réseau)
-        final_elec = elec_step2 * 0.10 if sim_elec_green else elec_step2 # Facteur devient quasi nul si vert
+        # --- 3. MOTEUR DE CALCUL ---
         
-        gain_total_ener = (ref_ener_elec + ref_ener_heat) - (final_heat + final_elec)
+        # A. FACTEUR DÉMOGRAPHIQUE
+        coeff_pop = 1 + (sim_pop_growth / 100.0)
+        
+        # B. CALCUL MOBILITÉ
+        # 1. Effet Pop
+        mob_v1 = ref_mob * coeff_pop 
+        # 2. Effet Distanciel (1j = 20% de moins)
+        ratio_pres = (5 - sim_remote_days) / 5.0
+        mob_v2 = mob_v1 * ratio_pres
+        # 3. Effet Sobriété Km (Le levier que tu voulais garder)
+        mob_v3 = mob_v2 * (1 - sim_mob_reduce/100.0)
+        
+        # 4. Report Train (sur part avion estimée)
+        part_avion = mob_v3 * 0.30 
+        gain_train = (part_avion * 0.90) if sim_mob_train else 0
+        mob_v4 = mob_v3 - gain_train
+        
+        # 5. Covoit & Vélo
+        mob_v5 = mob_v4 / sim_mob_carpool
+        gain_velo = mob_v5 * 0.15 if sim_mob_soft else 0
+        
+        final_mob = mob_v5 - gain_velo
+        gain_total_mob = (ref_mob * coeff_pop) - final_mob
 
-        # IT & ACHATS
-        # 1. IT Vie (Ratio: 4ans / (4+Extension))
-        it_step1 = ref_it * (4 / (4 + sim_it_life))
-        # 2. IT Reconditionné (La part reconditionnée a un impact réduit de 80%)
-        # Formule : Part_Neuf * 1 + Part_Recond * 0.2
-        ratio_mix_it = (1 - sim_it_refurb/100) * 1 + (sim_it_refurb/100) * 0.2
-        final_it = it_step1 * ratio_mix_it
+        # C. CALCUL ÉNERGIE
+        ener_elec_v1 = ref_ener_elec * coeff_pop
+        ener_heat_v1 = ref_ener_heat * coeff_pop
         
-        # 3. Food
-        # Part Bœuf remplacée par Végé (facteur ~0.15 du bœuf)
-        final_food = ref_food * (1 - sim_food_vege/100) + (ref_food * sim_food_vege/100 * 0.15)
+        # Chauffage (Isolation) -> Agit sur Gaz, Fioul ET Radiateurs
+        final_heat = ener_heat_v1 * (1 - sim_heat/100.0)
         
-        # 4. Déchets
-        final_waste = ref_waste * (1 - sim_waste/100)
+        # Élec
+        elec_v2 = ener_elec_v1 * 0.90 if sim_led else ener_elec_v1
+        elec_v3 = elec_v2 * (1 - sim_solar/100.0)
+        final_elec = elec_v3 * 0.10 if sim_elec_green else elec_v3
         
-        gain_total_ressources = (ref_it + ref_food + ref_waste) - (final_it + final_food + final_waste)
+        gain_total_ener = (ener_elec_v1 + ener_heat_v1) - (final_heat + final_elec)
 
-        # TOTAL
-        total_sim = final_mob + final_heat + final_elec + final_it + final_food + final_waste
-        total_gain = total_ref - total_sim
+        # D. CALCUL RESSOURCES
+        it_v1 = ref_it * coeff_pop
+        food_v1 = ref_food * coeff_pop
+        waste_v1 = ref_waste * coeff_pop
+        
+        it_v2 = it_v1 / (1 + (sim_it_life / 4.0))
+        ratio_recond = (1 - sim_it_refurb/100) * 1.0 + (sim_it_refurb/100) * 0.2
+        final_it = it_v2 * ratio_recond
+        
+        final_food = food_v1 * (1 - sim_food_vege/100) + (food_v1 * sim_food_vege/100 * 0.15)
+        final_waste = waste_v1 * (1 - sim_waste/100.0)
+        
+        gain_total_res = (it_v1 + food_v1 + waste_v1) - (final_it + final_food + final_waste)
 
-        # --- 4. VISUALISATION DES RÉSULTATS ---
+        # E. SYNTHÈSE
+        total_ref_projete = total_ref * coeff_pop
+        total_final = final_mob + final_heat + final_elec + final_it + final_food + final_waste
+        
+        # --- 4. VISUALISATION ---
         st.divider()
-        st.markdown("### 🔮 Trajectoire Carbone 2030")
+        st.subheader("📉 Trajectoire & Résultats 2030")
 
         k1, k2, k3, k4 = st.columns(4)
         k1.metric("Référence 2026", f"{total_ref/1000:.1f} T")
-        k2.metric("Gain Identifié", f"-{total_gain/1000:.1f} T", delta="Économie", delta_color="inverse")
-        k3.metric("Atterrissage 2030", f"{total_sim/1000:.1f} T")
         
-        # Target Check
-        pop = st.session_state.params['pop_etu'] + st.session_state.params['pop_alt'] + st.session_state.params['pop_prof']
-        if pop == 0: pop = 1
-        ratio_sim = (total_sim / 1000) / pop
-        target = float(st.session_state.params['budget_co2'])
+        delta_pop = total_ref_projete - total_ref
+        k2.metric("Impact Démographique", f"{delta_pop/1000:+.1f} T", "Inertiel", delta_color="off")
         
-        icon = "✅" if ratio_sim <= target else "🚧"
-        k4.metric("Nouvelle Performance", f"{ratio_sim:.1f} T/pers", f"Cible: {target} {icon}")
-
-        # WATERFALL CHART (Le juge de paix)
-        df_waterfall = pd.DataFrame([
-            {"Label": "1. Situation Actuelle", "Amount": total_ref/1000, "Type": "Départ"},
-            {"Label": "2. Plan Mobilité", "Amount": -gain_total_mob/1000, "Type": "Gain"},
-            {"Label": "3. Efficacité Énergétique", "Amount": -gain_total_ener/1000, "Type": "Gain"},
-            {"Label": "4. Sobriété Numérique/Achats", "Amount": -gain_total_ressources/1000, "Type": "Gain"},
-            {"Label": "5. Objectif 2030", "Amount": total_sim/1000, "Type": "Arrivée"}
-        ])
-
-        chart = alt.Chart(df_waterfall).mark_bar().encode(
-            x=alt.X('Label', sort=None, title=None),
-            y=alt.Y('Amount', title="Tonnes CO2e"),
-            color=alt.Color('Type', scale=alt.Scale(domain=['Départ', 'Gain', 'Arrivée'], range=['#95a5a6', '#2ecc71', '#3498db'])),
-            tooltip=['Label', 'Amount']
-        ).properties(height=400)
+        total_economy = total_ref_projete - total_final
+        k3.metric("Gains Actions", f"-{total_economy/1000:.1f} T", delta="Économie", delta_color="inverse")
         
-        st.altair_chart(chart, use_container_width=True)
+        pop_projete = (st.session_state.params['pop_etu'] + st.session_state.params['pop_alt'] + st.session_state.params['pop_prof']) * coeff_pop
+        if pop_projete == 0: pop_projete = 1
+        ratio_final = (total_final / 1000) / pop_projete
+        cible = st.session_state.params['budget_co2']
+        
+        k4.metric("Atterrissage / Pers.", f"{ratio_final:.2f} T", f"Cible: {cible} ({'✅' if ratio_final <= cible else '⚠️'})", delta_color="inverse")
+        
+        # GRAPHIQUES
+        g1, g2 = st.columns([2, 1])
+        
+        with g1:
+            st.markdown("**🌊 Cascade des Gains (Waterfall)**")
+            wf_data = [
+                {"Etape": "1. Base 2026", "Val": total_ref/1000, "Type": "Base", "Order": 1},
+                {"Etape": "2. Effet Pop.", "Val": delta_pop/1000, "Type": "Hausse", "Order": 2},
+                {"Etape": "3. Gain Mobilité", "Val": -gain_total_mob/1000, "Type": "Baisse", "Order": 3},
+                {"Etape": "4. Gain Énergie", "Val": -gain_total_ener/1000, "Type": "Baisse", "Order": 4},
+                {"Etape": "5. Gain Ressources", "Val": -gain_total_res/1000, "Type": "Baisse", "Order": 5},
+                {"Etape": "6. Arrivée 2030", "Val": total_final/1000, "Type": "Final", "Order": 6}
+            ]
+            df_wf = pd.DataFrame(wf_data)
+            
+            df_wf["prev"] = df_wf["Val"].cumsum().shift(1).fillna(0)
+            df_wf["start"] = df_wf["prev"]
+            df_wf["end"] = df_wf["prev"] + df_wf["Val"]
+            df_wf.loc[df_wf["Type"] == "Base", "start"] = 0
+            df_wf.loc[df_wf["Type"] == "Base", "end"] = df_wf["Val"]
+            df_wf.loc[df_wf["Type"] == "Final", "start"] = 0
+            df_wf.loc[df_wf["Type"] == "Final", "end"] = df_wf["Val"]
+            
+            chart_wf = alt.Chart(df_wf).mark_bar().encode(
+                x=alt.X("Etape", sort=alt.SortField("Order"), axis=alt.Axis(labelAngle=-45)),
+                y=alt.Y("start", title="Tonnes CO2e"),
+                y2="end",
+                color=alt.Color("Type", scale=alt.Scale(domain=["Base", "Hausse", "Baisse", "Final"], range=["#95a5a6", "#e74c3c", "#27ae60", "#2c3e50"])),
+                tooltip=["Etape", alt.Tooltip("Val", format=".1f", title="Volume")]
+            ).properties(height=350)
+            st.altair_chart(chart_wf, use_container_width=True)
 
-        # PLAN D'ACTION (Récapitulatif)
-        with st.expander("📄 Exporter le Plan d'Action (Tableau)", expanded=True):
-            action_plan = pd.DataFrame({
-                "Domaine": ["Mobilité", "Mobilité", "Mobilité", "Énergie", "Énergie", "IT", "IT", "Achats"],
-                "Levier": ["Réduction Km", "Covoiturage", "Report Train", "Élec Verte", "Isolation", "Durée de vie +", "Reconditionné", "Menu Végé"],
-                "Configuration": [f"-{sim_mob_reduce}%", f"x{sim_mob_carpool}", f"{sim_mob_train}", f"{sim_elec_green}", f"-{sim_heat}%", f"+{sim_it_life} ans", f"{sim_it_refurb}%", f"{sim_food_vege}%"],
-                "Statut": ["Activé" if x else "En attente" for x in [sim_mob_reduce, sim_mob_carpool>1, sim_mob_train, sim_elec_green, sim_heat, sim_it_life, sim_it_refurb, sim_food_vege]]
-            })
-            st.dataframe(action_plan, use_container_width=True)
+        with g2:
+            st.markdown("**💰 Contribution des Gains**")
+            gains_data = pd.DataFrame([
+                {"Source": "Mobilité", "Gain": gain_total_mob},
+                {"Source": "Énergie", "Gain": gain_total_ener},
+                {"Source": "Ressources", "Gain": gain_total_res}
+            ])
+            gains_data = gains_data[gains_data["Gain"] > 0.001] # Filtre les zéros
+            
+            if not gains_data.empty:
+                chart_donut = alt.Chart(gains_data).mark_arc(innerRadius=40).encode(
+                    theta="Gain",
+                    color=alt.Color("Source", scale=alt.Scale(scheme='set2')),
+                    tooltip=["Source", alt.Tooltip("Gain", format=".1f")]
+                )
+                st.altair_chart(chart_donut, use_container_width=True)
+            else:
+                st.caption("Activez des leviers pour voir la répartition des gains.")
 # ==============================================================================
 # PAGE 5 : RAPPORT & EXPORT (OFFICIAL REPORTING)
 # ==============================================================================
@@ -1106,17 +1168,49 @@ elif "5." in nav:
         ratio = (tot_co2 * 1000) / pop
         
         # --- CONFIGURATION ---
-        with st.expander("🛠️ Configuration du Rapport (Auteur & Commentaires)", expanded=True):
+        # --- CONFIGURATION DU RAPPORT (AVEC ASSISTANT IA) ---
+        with st.expander("🛠️ Configuration & Assistant de Rédaction", expanded=True):
             c1, c2 = st.columns(2)
             auteur = c1.text_input("Auteur du rapport", "Département Supply Chain & RSE")
-            version = c2.text_input("Version du document", f"V1.0 - {datetime.date.today()}")
+            version = c2.text_input("Version", f"V1.0 - {datetime.date.today()}")
             
-            commentaires = st.text_area("💬 Analyse & Commentaires de l'Ingénieur", 
-                                      "Le bilan montre une prédominance du Scope 3 liée à la mobilité. "
-                                      "L'incertitude est maîtrisée. "
-                                      "Des actions correctives sur l'IT sont recommandées.")
+            # --- LE CERVEAU DE L'ASSISTANT (Logique Expert) ---
+            def generer_analyse_auto():
+                analyse = []
+                # 1. Analyse Globale
+                analyse.append(f"Le bilan carbone global s'élève à {tot_co2:.1f} Tonnes CO2e.")
+                
+                # 2. Analyse de l'Objectif
+                delta = ratio - st.session_state.params['budget_co2']
+                if delta <= 0:
+                    analyse.append(f"✅ EXCELLENT : Avec {ratio:.1f} T/pers, l'objectif ({st.session_state.params['budget_co2']} T) est atteint.")
+                else:
+                    analyse.append(f"⚠️ ATTENTION : Le ratio de {ratio:.1f} T/pers dépasse la cible de +{delta:.1f} T.")
 
-        st.divider()
+                # 3. Identification du Hotspot (Le plus gros pollueur)
+                top_item = df.groupby("Catégorie")["Impact_kgCO2"].sum().idxmax()
+                top_val = df.groupby("Catégorie")["Impact_kgCO2"].sum().max() / 1000
+                part = (top_val / tot_co2) * 100
+                analyse.append(f"Le poste critique est '{top_item}' qui représente {part:.0f}% des émissions ({top_val:.1f} T).")
+
+                # 4. Analyse Qualité Donnée
+                if tot_marge / tot_co2 < 0.10:
+                    analyse.append("La qualité des données est jugée fiable (incertitude < 10%).")
+                else:
+                    analyse.append("Des efforts de collecte sont nécessaires pour réduire l'incertitude actuelle.")
+                
+                # 5. Conclusion
+                analyse.append("RECOMMANDATION : Prioriser les actions de réduction sur le premier poste d'émission identifié ci-dessus.")
+                
+                return " ".join(analyse)
+
+            # Bouton Magique
+            if st.button("✨ Générer l'analyse par l'IA (Auto-Writing)"):
+                st.session_state['auto_comment'] = generer_analyse_auto()
+            
+            # Zone de texte (qui prend le texte généré ou reste vide)
+            valeur_texte = st.session_state.get('auto_comment', "Cliquez sur le bouton magique ci-dessus pour générer l'analyse...")
+            commentaires = st.text_area("💬 Analyse & Commentaires", value=valeur_texte, height=150)
 
         # --- DOCUMENT VISUEL ---
         st.markdown(f"""
