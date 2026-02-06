@@ -201,6 +201,7 @@ def save_flux(cat, item, val, unit, fe, incertitude, detail):
 # 3. BARRE LATÉRALE
 # ==============================================================================
 with st.sidebar:
+    
     try:
         st.image("logo.png", use_container_width=True)
     except:
@@ -287,21 +288,31 @@ with st.sidebar:
             st.session_state.db_entries = []
             st.rerun()
 
-    # --- PIED DE PAGE (SIGNATURE OPTIMISÉE) ---
-    st.sidebar.markdown("---") # Une ligne de séparation fine
-    st.sidebar.markdown(
-        """
-        <div style="text-align: center; font-size: 11px; color: #888; line-height: 1.5;">
-            <b>© 2026 MSCAL CARBON ERP</b><br>
-            <i>Solution Ingénieur ENSAIA</i><br>
-            <br>
-            Dev by <b>Team ACS</b><br>
-            <span style="font-size: 10px;">(Abdel | Clara | Steve)</span>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
+   
+# --- PIED DE PAGE (SIGNATURE & LOGO CÔTE À CÔTE) ---
+    st.sidebar.markdown("---") # Ligne de séparation fine
+    
+    # On crée 2 colonnes : Petite à gauche (logo), plus large à droite (texte)
+    c_logo_footer, c_text_footer = st.sidebar.columns([1, 3])
+    
+    with c_logo_footer:
+        # Affiche le logo en petit (comme une icône).
+        # Ajuste "width=60" si tu le veux un peu plus grand ou plus petit.
+        st.image("logo_acs.png", width=60) 
+        
+    with c_text_footer:
+        # Le texte de signature, aligné à gauche pour coller au logo
+        st.markdown(
+            """
+            <div style="text-align: left; font-size: 11px; color: #888; line-height: 1.4; padding-top: 5px;">
+                <b>© 2026 MSCAL CARBON ERP</b><br>
+                Dev by <b>ACS Engineering Solutions</b><br>
+                <span style="font-size: 10px;">Contact us : mscal.ensaia@gmail.com</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+ 
 # ==============================================================================
 # PAGE 0 : GUIDE & DÉFINITIONS
 # ==============================================================================
